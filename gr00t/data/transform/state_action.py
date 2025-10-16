@@ -185,6 +185,8 @@ class Normalizer:
         elif self.mode == "binary":
             # Range of binary is [0, 1]
             normalized = (x > 0.5).to(x.dtype)
+        elif self.mode == "zero":
+            normalized = torch.zeros_like(x, dtype=x.dtype)
         else:
             raise ValueError(f"Invalid normalization mode: {self.mode}")
 

@@ -985,7 +985,7 @@ class LeRobotMixtureDataset(Dataset):
         # Set the epoch and sample the first epoch
         self.set_epoch(0)
 
-        self.update_metadata(metadata_config)
+        # self.update_metadata(metadata_config)
 
     @property
     def dataset_lengths(self) -> np.ndarray:

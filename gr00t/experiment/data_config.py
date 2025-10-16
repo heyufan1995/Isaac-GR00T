@@ -878,6 +878,301 @@ class AgibotGenie1DataConfig:
 
 
 ###########################################################################################
+# max_action_dim must be set to LAPA dim = 512. Need to modify it back to 32 when using pretrained groot model
+
+
+class MedbotDataConfig:
+    # skip right endo
+    video_keys = [
+        "video.left_endo_image",
+        # "video.right_endo_image",
+        # "video.left_wrist_image",
+        # "video.right_wrist_image"
+    ]
+    state_keys = [
+        "state.left_cartesian",
+        "state.left_rotation",
+        "state.left_jaw",
+        "state.right_cartesian",
+        "state.right_rotation",
+        "state.right_jaw",
+    ]
+    action_keys = [
+        "action.left_cartesian",
+        "action.left_rotation",
+        "action.left_jaw",
+        "action.right_cartesian",
+        "action.right_rotation",
+        "action.right_jaw",
+    ]
+    language_keys = ["annotation.human.task_description"]
+    observation_indices = [0]
+    action_indices = list(range(16))
+
+    def modality_config(self):
+        video_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.video_keys,
+        )
+        state_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.state_keys,
+        )
+        action_modality = ModalityConfig(
+            delta_indices=self.action_indices,
+            modality_keys=self.action_keys,
+        )
+        language_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.language_keys,
+        )
+        modality_configs = {
+            "video": video_modality,
+            "state": state_modality,
+            "action": action_modality,
+            "language": language_modality,
+        }
+        return modality_configs
+
+    def transform(self):
+        transforms = [
+            # video transforms
+            VideoToTensor(apply_to=self.video_keys),
+            VideoCrop(apply_to=self.video_keys, scale=0.95),
+            VideoResize(apply_to=self.video_keys, height=224, width=224, interpolation="linear"),
+            VideoColorJitter(
+                apply_to=self.video_keys,
+                brightness=0.3,
+                contrast=0.4,
+                saturation=0.5,
+                hue=0.08,
+            ),
+            VideoToNumpy(apply_to=self.video_keys),
+            # state transforms
+            StateActionToTensor(apply_to=self.state_keys),
+            StateActionTransform(
+                apply_to=self.state_keys,
+                normalization_modes={
+                    "state.left_cartesian": "min_max",
+                    "state.right_cartesian": "min_max",
+                    "state.left_jaw": "min_max",
+                    "state.right_jaw": "min_max",
+                },
+            ),
+            # action transforms
+            StateActionToTensor(apply_to=self.action_keys),
+            StateActionTransform(
+                apply_to=self.action_keys,
+                normalization_modes={
+                    "action.left_cartesian": "min_max",
+                    "action.right_cartesian": "min_max",
+                    "action.left_jaw": "min_max",
+                    "action.right_jaw": "min_max",
+                },
+            ),
+            # concat transforms
+            ConcatTransform(
+                video_concat_order=self.video_keys,
+                state_concat_order=self.state_keys,
+                action_concat_order=self.action_keys,
+            ),
+            GR00TTransform(
+                state_horizon=len(self.observation_indices),
+                action_horizon=len(self.action_indices),
+                max_state_dim=64,
+                max_action_dim=512,
+            ),
+        ]
+
+        return ComposedModalityTransform(transforms=transforms)
+
+
+# max_action_dim must be set to LAPA dim = 512. Need to modify it back to 32 when using pretrained groot model
+class DvrkDataConfig:
+    video_keys = [
+        "video.left_endo_image",
+        "video.right_endo_image",
+        "video.left_wrist_image",
+        "video.right_wrist_image"
+    ]
+    state_keys = [
+        "state.psm1",
+        "state.psm2",
+        "state.psm1_jaw",
+        "state.psm2_jaw",
+    ]
+    action_keys = [
+        "action.psm1",
+        "action.psm2",
+        "action.psm1_jaw",
+        "action.psm2_jaw"
+    ]
+    language_keys = ["annotation.human.task_description"]
+    observation_indices = [0]
+    action_indices = list(range(16))
+
+    def modality_config(self):
+        video_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.video_keys,
+        )
+        state_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.state_keys,
+        )
+        action_modality = ModalityConfig(
+            delta_indices=self.action_indices,
+            modality_keys=self.action_keys,
+        )
+        language_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.language_keys,
+        )
+        modality_configs = {
+            "video": video_modality,
+            "state": state_modality,
+            "action": action_modality,
+            "language": language_modality,
+        }
+        return modality_configs
+
+    def transform(self):
+        transforms = [
+            # video transforms
+            VideoToTensor(apply_to=self.video_keys),
+            VideoCrop(apply_to=self.video_keys, scale=0.95),
+            VideoResize(apply_to=self.video_keys, height=224, width=224, interpolation="linear"),
+            VideoColorJitter(
+                apply_to=self.video_keys,
+                brightness=0.3,
+                contrast=0.4,
+                saturation=0.5,
+                hue=0.08,
+            ),
+            VideoToNumpy(apply_to=self.video_keys),
+            # state transforms
+            StateActionToTensor(apply_to=self.state_keys),
+            StateActionTransform(
+                apply_to=self.state_keys,
+                normalization_modes={
+                    "state.psm1": "mean_std",
+                    "state.psm2": "mean_std",
+                    "state.psm1_jaw": "mean_std",
+                    "state.psm2_jaw": "mean_std",
+                },
+            ),
+            # action transforms
+            StateActionToTensor(apply_to=self.action_keys),
+            StateActionTransform(
+                apply_to=self.action_keys,
+                normalization_modes={
+                    "action.psm1": "mean_std",
+                    "action.psm2": "mean_std",
+                    "action.psm1_jaw": "mean_std",
+                    "action.psm2_jaw": "mean_std",
+                },
+            ),
+            # concat transforms
+            ConcatTransform(
+                video_concat_order=self.video_keys,
+                state_concat_order=self.state_keys,
+                action_concat_order=self.action_keys,
+            ),
+            GR00TTransform(
+                state_horizon=len(self.observation_indices),
+                action_horizon=len(self.action_indices),
+                max_state_dim=64,
+                max_action_dim=512,
+            ),
+        ]
+
+        return ComposedModalityTransform(transforms=transforms)
+
+
+#################
+class LAPADataConfig:
+    video_keys = [
+        "video.image",
+    ]
+    state_keys = [
+        "state.lapa"
+    ]
+    action_keys = [
+        "action.lapa"
+    ]
+    language_keys  = ["annotation.human.task_description"]
+    observation_indices = [0]
+    action_indices = list(range(16))
+    def modality_config(self):
+        video_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.video_keys,
+        )
+        state_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.state_keys,
+        )
+        action_modality = ModalityConfig(
+            delta_indices=self.action_indices,
+            modality_keys=self.action_keys,
+        )
+        language_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.language_keys,
+        )
+        modality_configs = {
+            "video": video_modality,
+            "state": state_modality,
+            "action": action_modality,
+            "language": language_modality,
+        }
+        return modality_configs
+
+    def transform(self):
+        transforms = [
+            # video transforms
+            VideoToTensor(apply_to=self.video_keys),
+            VideoCrop(apply_to=self.video_keys, scale=0.95),
+            VideoResize(apply_to=self.video_keys, height=224, width=224, interpolation="linear"),
+            VideoColorJitter(
+                apply_to=self.video_keys,
+                brightness=0.3,
+                contrast=0.4,
+                saturation=0.5,
+                hue=0.08,
+            ),
+            VideoToNumpy(apply_to=self.video_keys),
+            # state transforms
+            StateActionToTensor(apply_to=self.state_keys),
+            StateActionTransform(
+                apply_to=self.state_keys,
+                normalization_modes={
+                    "state.lapa": "zero",
+                }
+            ),
+            # action transforms
+            StateActionToTensor(apply_to=self.action_keys),
+            StateActionTransform(
+                apply_to=self.action_keys,
+                normalization_modes={
+                    "action.lapa": "mean_std"
+                },
+            ),
+            # concat transforms
+            ConcatTransform(
+                video_concat_order=self.video_keys,
+                state_concat_order=self.state_keys,
+                action_concat_order=self.action_keys,
+            ),
+            GR00TTransform(
+                state_horizon=len(self.observation_indices),
+                action_horizon=len(self.action_indices),
+                max_state_dim=64,
+                max_action_dim=512,
+            ),
+        ]
+
+        return ComposedModalityTransform(transforms=transforms)
 
 DATA_CONFIG_MAP = {
     "fourier_gr1_arms_waist": FourierGr1ArmsWaistDataConfig(),
@@ -892,4 +1187,7 @@ DATA_CONFIG_MAP = {
     "unitree_g1_full_body": UnitreeG1FullBodyDataConfig(),
     "oxe_droid": OxeDroidDataConfig(),
     "agibot_genie1": AgibotGenie1DataConfig(),
+    "dvrk": DvrkDataConfig(),
+    "lapa": LAPADataConfig(),
+    "medbot": MedbotDataConfig()
 }

@@ -18,8 +18,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Literal
-
+from typing import List, Literal, Union
 import torch
 import tyro
 from transformers import TrainingArguments
@@ -44,7 +43,7 @@ class ArgsConfig:
     output_dir: str = "/tmp/gr00t"
     """Directory to save model checkpoints."""
 
-    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "fourier_gr1_arms_only"
+    data_config: Union[Literal[tuple(DATA_CONFIG_MAP.keys())], List[Literal[tuple(DATA_CONFIG_MAP.keys())]]] = "fourier_gr1_arms_only"
     """Data configuration name from DATA_CONFIG_MAP, we assume all datasets have the same data config"""
 
     # Training parameters
@@ -67,7 +66,7 @@ class ArgsConfig:
     tune_llm: bool = False
     """Whether to fine-tune the language model backbone."""
 
-    tune_visual: bool = False
+    tune_visual: bool = True
     """Whether to fine-tune the vision tower."""
 
     tune_projector: bool = True
@@ -108,7 +107,7 @@ class ArgsConfig:
     """Where to report training metrics (e.g., 'wandb', 'tensorboard', 'azure_ml')."""
 
     # Data loading parameters
-    embodiment_tag: Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())] = "new_embodiment"
+    embodiment_tag: Union[Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())], List[Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())]]] = "new_embodiment"
     """Embodiment tag to use for training. e.g. 'new_embodiment', 'gr1'"""
 
     video_backend: Literal["decord", "torchvision_av"] = "decord"
@@ -122,7 +121,7 @@ class ArgsConfig:
     balance_trajectory_weights: bool = True
     """Used in LeRobotMixtureDataset. If True, sample trajectories within a dataset weighted by their length; otherwise, equal weighting."""
 
-
+    action_dim: int = 32
 #####################################################################################
 # main training function
 #####################################################################################
@@ -131,15 +130,16 @@ class ArgsConfig:
 def main(config: ArgsConfig):
     """Main training function."""
     # ------------ step 1: load dataset ------------
-    embodiment_tag = EmbodimentTag(config.embodiment_tag)
 
-    # 1.1 modality configs and transforms
-    data_config_cls = DATA_CONFIG_MAP[config.data_config]
-    modality_configs = data_config_cls.modality_config()
-    transforms = data_config_cls.transform()
 
     # 1.2 data loader: we will use either single dataset or mixture dataset
     if len(config.dataset_path) == 1:
+        embodiment_tag = EmbodimentTag(config.embodiment_tag)
+
+        # 1.1 modality configs and transforms
+        data_config_cls = DATA_CONFIG_MAP[config.data_config]
+        modality_configs = data_config_cls.modality_config()
+        transforms = data_config_cls.transform()
         train_dataset = LeRobotSingleDataset(
             dataset_path=config.dataset_path[0],
             modality_configs=modality_configs,
@@ -149,8 +149,12 @@ def main(config: ArgsConfig):
         )
     else:
         single_datasets = []
-        for p in config.dataset_path:
+        for i,p in enumerate(config.dataset_path):
             assert os.path.exists(p), f"Dataset path {p} does not exist"
+            embodiment_tag = EmbodimentTag(config.embodiment_tag[i])
+            data_config_cls = DATA_CONFIG_MAP[config.data_config[i]]
+            modality_configs = data_config_cls.modality_config()
+            transforms = data_config_cls.transform()            
             ## We use the same transforms, modality configs, and embodiment tag for all datasets here,
             ## in reality, you can use dataset from different modalities and embodiment tags
             dataset = LeRobotSingleDataset(
@@ -222,6 +226,43 @@ def main(config: ArgsConfig):
 
         # Set trainable parameters for the new action head
         model.action_head.set_trainable_parameters(
+            tune_projector=config.tune_projector, tune_diffusion_model=config.tune_diffusion_model
+        )
+
+    if config.action_dim != model.action_head.config.action_dim:
+        print(
+            f"Recreating action head with action_dim {config.action_dim} (was {model.action_head.config.action_dim})"
+        )
+
+        # Update the action head config
+        new_action_head_config = model.action_head.config
+        new_action_head_config.action_dim = config.action_dim
+
+        # Import the FlowmatchingActionHead class
+        from gr00t.model.action_head.flow_matching_action_head import (
+            FlowmatchingActionHead,
+        )
+
+        # Create new action head with updated config
+        new_action_head = FlowmatchingActionHead(new_action_head_config)
+
+        # Copy the weights from the old action head to the new one
+        state_dict = model.action_head.state_dict()
+        state_dict.pop("action_encoder.W1.W")
+        state_dict.pop("action_decoder.layer2.W")
+        state_dict.pop("action_decoder.layer2.b")
+        new_action_head.load_state_dict(state_dict, strict=False)
+
+        # Replace the action head
+        model.action_head_lapa = new_action_head
+
+        # Update model config AND the action_head_cfg dictionary that gets saved
+        # model.config.action_dim = config.action_dim
+        # model.action_dim = config.action_dim
+        # model.config.action_head_cfg["action_dim"] = config.action_dim
+
+        # Set trainable parameters for the new action head
+        model.action_head_lapa.set_trainable_parameters(
             tune_projector=config.tune_projector, tune_diffusion_model=config.tune_diffusion_model
         )
 

@@ -98,7 +98,7 @@ class GR00T_N1_5(PreTrainedModel):
             shape_ok = (
                 len(action.shape) == 3
                 and action.shape[1] == self.action_horizon
-                and action.shape[2] == self.action_dim
+                # and action.shape[2] == self.action_dim
             )
             if not type_ok:
                 error_msg += f"\n{action.dtype=}"
@@ -164,8 +164,66 @@ class GR00T_N1_5(PreTrainedModel):
     ) -> BatchFeature:
         backbone_inputs, action_inputs = self.prepare_input(inputs)
         backbone_outputs = self.backbone(backbone_inputs)
-        action_head_outputs = self.action_head(backbone_outputs, action_inputs)
-        self.validate_data(action_head_outputs, backbone_outputs, is_training=True)
+        
+        # Check if we have LAPA head and any LAPA samples
+        mask = action_inputs.embodiment_id == 30
+        has_lapa_head = hasattr(self, 'action_head_lapa')
+        has_lapa_samples = mask.any()
+        if has_lapa_head:
+            # Always split the batch when LAPA head exists to ensure both heads participate
+            lapa_indices = torch.where(mask.squeeze())[0]
+            nonlapa_indices = torch.where(~mask.squeeze())[0]
+            
+            total_loss = 0.0
+            
+            # Process LAPA samples if any exist
+            if len(lapa_indices) > 0:
+                action_inputs_lapa = BatchFeature({k: v[lapa_indices] for k, v in action_inputs.items()})
+                backbone_outputs_lapa = BatchFeature({k: v[lapa_indices] for k, v in backbone_outputs.items()})
+                action_head_outputs_lapa = self.action_head_lapa(backbone_outputs_lapa, action_inputs_lapa)
+                total_loss += action_head_outputs_lapa['loss']
+            else:
+                # No LAPA samples - create dummy computation using first sample to ensure gradients flow
+                # This ensures action_head_lapa parameters participate but don't affect training
+                dummy_action_inputs = BatchFeature({k: v[:1] for k, v in action_inputs.items()})
+                dummy_backbone_outputs = BatchFeature({k: v[:1] for k, v in backbone_outputs.items()})
+                dummy_lapa_outputs = self.action_head_lapa(dummy_backbone_outputs, dummy_action_inputs)
+                # Scale by 0 so it doesn't affect training but maintains computational graph
+                total_loss += dummy_lapa_outputs['loss'] * 0.0
+            
+            # Process non-LAPA samples if any exist
+            if len(nonlapa_indices) > 0:
+                action_inputs_nonlapa = BatchFeature()
+                for k, v in action_inputs.items():
+                    if k in ['action', 'action_mask']:
+                        # Trim to action_head.action_dim (32)
+                        action_inputs_nonlapa[k] = v[nonlapa_indices, :, :self.action_head.action_dim]
+                    else:
+                        action_inputs_nonlapa[k] = v[nonlapa_indices]
+                backbone_outputs_nonlapa = BatchFeature({k: v[nonlapa_indices] for k, v in backbone_outputs.items()})
+                action_head_outputs_nonlapa = self.action_head(backbone_outputs_nonlapa, action_inputs_nonlapa)
+                ######## NOTICE removed kinematic loss to see if converge ########
+                total_loss += action_head_outputs_nonlapa['loss'] * 0
+            else:
+                # No non-LAPA samples - create dummy computation using first sample to ensure gradients flow
+                dummy_action_inputs = BatchFeature()
+                for k, v in action_inputs.items():
+                    if k in ['action', 'action_mask']:
+                        dummy_action_inputs[k] = v[:1, :, :self.action_head.action_dim]
+                    else:
+                        dummy_action_inputs[k] = v[:1]
+                dummy_backbone_outputs = BatchFeature({k: v[:1] for k, v in backbone_outputs.items()})
+                dummy_nonlapa_outputs = self.action_head(dummy_backbone_outputs, dummy_action_inputs)
+                total_loss += dummy_nonlapa_outputs['loss'] * 0.0  # Scale by 0
+            
+            action_head_outputs = {'loss': total_loss}
+        else:
+            # Original behavior when no LAPA head exists
+            action_inputs['action'] = action_inputs['action'][..., :self.action_head.action_dim]
+            action_inputs['action_mask'] = action_inputs['action_mask'][..., :self.action_head.action_dim]
+            action_head_outputs = self.action_head(backbone_outputs, action_inputs)
+            
+        # self.validate_data(action_head_outputs, backbone_outputs, is_training=True)
         return action_head_outputs
 
     def get_action(

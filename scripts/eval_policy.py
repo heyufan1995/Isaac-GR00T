@@ -52,13 +52,14 @@ class ArgsConfig:
     plot: bool = False
     """Whether to plot the images."""
 
-    modality_keys: List[str] = field(default_factory=lambda: ["right_arm", "left_arm"])
+    # modality_keys: List[str] = field(default_factory=lambda: ["psm1", "psm2", "psm1_jaw", "psm2_jaw"])
+    modality_keys: List[str] = field(default_factory=lambda: ["left_cartesian","left_rotation","left_jaw","right_cartesian","right_rotation","right_jaw"])
     """Modality keys to evaluate."""
 
     data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "fourier_gr1_arms_only"
     """Data config to use."""
 
-    steps: int = 150
+    steps: int = 400
     """Number of steps to evaluate."""
 
     trajs: int = 1
@@ -155,7 +156,7 @@ def main(args: ArgsConfig):
             steps=args.steps,
             action_horizon=args.action_horizon,
             plot=args.plot,
-            save_plot_path=args.save_plot_path,
+            save_plot_path=args.save_plot_path.replace(".png", f"_traj{traj_id}.png") if args.save_plot_path is not None else None,
         )
         print("MSE:", mse)
         all_mse.append(mse)

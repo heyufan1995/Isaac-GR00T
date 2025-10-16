@@ -36,10 +36,13 @@ class EmbodimentTag(Enum):
     """
     Any new embodiment for finetuning.
     """
+    
+    LAPA = "lapa"
 
 
 # Embodiment tag string: to projector index in the Action Expert Module
 EMBODIMENT_TAG_MAPPING = {
+    EmbodimentTag.LAPA.value: 30,
     EmbodimentTag.NEW_EMBODIMENT.value: 31,
     EmbodimentTag.OXE_DROID.value: 17,
     EmbodimentTag.AGIBOT_GENIE1.value: 26,

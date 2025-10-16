@@ -79,12 +79,13 @@ class TrainRunner:
                     {train_dataset.tag: train_dataset.metadata.model_dump(mode="json")}
                 )
             elif isinstance(train_dataset, LeRobotMixtureDataset):
-                metadata_json.update(
-                    {
-                        tag: metadata.model_dump(mode="json")
-                        for tag, metadata in train_dataset.merged_metadata.items()
-                    }
-                )
+                pass
+                # metadata_json.update(
+                #     {
+                #         tag: metadata.model_dump(mode="json")
+                #         for tag, metadata in train_dataset.merged_metadata.items()
+                #     }
+                # )
             else:
                 raise ValueError(f"Invalid dataset type: {type(train_dataset)}")
             with open(self.exp_cfg_dir / "metadata.json", "w") as f:
